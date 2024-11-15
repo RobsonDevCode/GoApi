@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
-	routes "github.com/RobsonDevCode/GoApi/cmd/internal"
+	"github.com/RobsonDevCode/GoApi/cmd/api/internal"
+	"github.com/RobsonDevCode/GoApi/cmd/api/settings/configuration"
 	"io"
 	"log"
 	"os"
 )
 
 func run(ctx context.Context, writer io.Writer, args []string) error {
+	if err := configuration.SetEnvironmentSettings("development"); err != nil {
+		log.Fatalf("Failed to set environment variables: %v", err)
+		return err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
