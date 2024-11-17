@@ -10,11 +10,12 @@ func NewRouter() error {
 	log.Info("api starting up...")
 	router := gin.Default()
 
-	router.GET("/stocks:ticker", services.GetStocks)
+	router.GET("/tickerDetails", services.GetTickerDetails)
+
 	server := "localhost:8080"
 	err := router.Run(server)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 		return err
 	}
 

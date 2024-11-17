@@ -34,14 +34,13 @@ func SetEnvironmentSettings(env string) error {
 	if err != nil {
 		return err
 	}
+
 	configBasePath = filepath.Join(configBasePath, "settings", "configuration")
 	errConf := configureApp(configBasePath, env)
 	if errConf != nil {
 		log.Fatalf("Error setting environment settings: %s", errConf)
 	}
-
 	return nil
-
 }
 
 // configureApp open correct configuration based on environment
