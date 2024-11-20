@@ -1,10 +1,11 @@
 package main
 
 import (
-	"github.com/RobsonDevCode/GoApi/cmd/api/internal"
+	repository "github.com/RobsonDevCode/GoApi/cmd/api/internal/repository/dataAccess"
+	"github.com/RobsonDevCode/GoApi/cmd/api/internal/routing"
 	"github.com/RobsonDevCode/GoApi/cmd/api/settings/configuration"
 	"log"
-	"os"
+	"time"
 )
 
 func run() error {
@@ -13,8 +14,24 @@ func run() error {
 		return err
 	}
 
-	err := routes.NewRouter()
+	//Add Connections and there configs
+	stocksDB, err := configuration.NewDB(configuration.DbConfig{
+		DSN:          configuration.Configuration.ConnectionStrings.Stocks,
+		MaxOpenConns: 25,
+		MaxIdelConns: 25,
+		MaxLifeTime:  15 * time.Minute,
+		MaxIdelTime:  5 * time.Minute,
+	})
+
 	if err != nil {
+		log.Fatalf("error setting up databases: %s", err)
+	}
+	defer stocksDB.Close()
+
+	stockRepo := repository.NewStockRepository(&repository.StocksDataBase{DB: stocksDB})
+
+	routerErr := routing.NewRouter(stockRepo)
+	if routerErr != nil {
 		log.Fatal(err)
 		return err
 	}
@@ -25,6 +42,5 @@ func run() error {
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
-		os.Exit(1)
 	}
 }

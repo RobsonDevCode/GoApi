@@ -6,7 +6,7 @@ import (
 
 type User struct {
 	ID       string          `json:"id"`
-	Username string          `json:"username"`
+	Username string          `json:"user_name"`
 	Conn     *websocket.Conn `json:"connection"` // WebSocket connection for real-time updates
 }
 
@@ -15,7 +15,17 @@ type TickerDetailsRequest struct {
 	Ticker string `form:"ticker" binding:"required"`
 }
 
+// GetFavouriteStocksOpenCloseRequest struct used to accept params for GetFavouriteStocksOpenClose api call
+type GetFavouriteStocksOpenCloseRequest struct {
+	UserId string `form:"user_id" binding:"required"` //we use string as uuid isn't safe for urls
+}
+
 type Subscription struct {
 	UserId string `json:"user_id"`
 	Ticker string `json:"ticker"`
+}
+
+type FavouriteStock struct {
+	UserId string `form:"user_id" json:"user_id" binding:"required"`
+	Ticker string `form:"ticker" json:"ticker" binding:"required"`
 }

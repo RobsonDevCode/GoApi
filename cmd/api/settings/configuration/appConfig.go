@@ -6,12 +6,7 @@ import (
 	"github.com/labstack/gommon/log"
 	"os"
 	"path/filepath"
-)
-
-const (
-	Development = "development"
-	Staging     = "staging"
-	Production  = "production"
+	"time"
 )
 
 type AppConfig struct {
@@ -21,6 +16,11 @@ type AppConfig struct {
 	ApiSettings struct {
 		Key string `json:"key"`
 	}
+}
+
+// Settings generic app settings so we don't have "magic" values
+type Settings struct {
+	Yesterday time.Time
 }
 
 var Configuration AppConfig

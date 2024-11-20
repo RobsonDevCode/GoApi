@@ -1,6 +1,6 @@
 package models
 
-type ApiResponse[T any] struct {
+type Response[T any] struct {
 	Data  T
 	Error error
 }
