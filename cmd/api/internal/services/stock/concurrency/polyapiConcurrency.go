@@ -4,10 +4,17 @@ import (
 	"context"
 	"github.com/RobsonDevCode/GoApi/cmd/api/models"
 	intergration "github.com/RobsonDevCode/GoApi/cmd/api/polygonApi"
+	. "github.com/RobsonDevCode/GoApi/cmd/api/settings/configuration"
 	"github.com/labstack/gommon/log"
 	polyModels "github.com/polygon-io/client-go/rest/models"
+
 	"sync"
+	"time"
 )
+
+var polyConfig = Settings{
+	Yesterday: time.Now().AddDate(0, 0, -1),
+}
 
 // PolyDataProcessor handles concurrent processing of stock data from or to the polygon api
 type PolyDataProcessor struct {
@@ -62,7 +69,7 @@ func (p *PolyDataProcessor) processTickerWorker(ctx context.Context, ticker stri
 
 	log.Infof("Processing ticker %s", ticker)
 
-	response := p.api.FetchTickerOpenClose(ticker)
+	response := p.api.FetchTickerOpenClose(ticker, polyConfig.Yesterday, ctx)
 
 	select {
 	case resultCh <- response:

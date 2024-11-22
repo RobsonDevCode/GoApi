@@ -23,20 +23,26 @@ func (s *StockHandler) RegisterRoutes(router *gin.Engine) {
 	stockHandler := router.Group("/stocks")
 	{
 		//********** GET COMMANDS**********
-		stockHandler.GET("tickerDetails", func(c *gin.Context) {
+		stockHandler.GET("info/tickerdetails", func(c *gin.Context) {
 			stock.GetTickerDetails(c, s.polyClient)
 		})
-		stockHandler.GET("/getFavouriteStocksOpenClose", func(c *gin.Context) {
+		stockHandler.GET("daily/openclose", func(c *gin.Context) {
 			stock.GetFavouriteStocksOpenClose(c, *s.stockRepo, s.polyClient)
+		})
+		stockHandler.GET("daily/changeFromYesterday", func(c *gin.Context) {
+			stock.GetPreviousDayClose(c, s.polyClient)
+		})
+		stockHandler.GET("indicators/sma", func(c *gin.Context) {
+			stock.GetSimpleMovingAverage(c, s.polyClient)
 		})
 
 		//********** POST/PUT/PATCH COMMANDS **********
-		stockHandler.POST("/addToFavourites", func(c *gin.Context) {
+		stockHandler.POST("/favourites/add", func(c *gin.Context) {
 			stock.FavouriteTicker(c, *s.stockRepo)
 		})
 
 		//********** DELETE COMMANDS**********
-		stockHandler.DELETE("/removeFromFavourites", func(c *gin.Context) {
+		stockHandler.DELETE("/favourites/delete", func(c *gin.Context) {
 			stock.UnFavouriteTicker(c, *s.stockRepo)
 		})
 

@@ -2,6 +2,8 @@ package stock
 
 import (
 	"fmt"
+	. "github.com/RobsonDevCode/GoApi/cmd/api/dtos"
+	"github.com/RobsonDevCode/GoApi/cmd/api/internal/processing"
 	. "github.com/RobsonDevCode/GoApi/cmd/api/internal/repository/dataAccess"
 	stockConcurrency "github.com/RobsonDevCode/GoApi/cmd/api/internal/services/stock/concurrency"
 	. "github.com/RobsonDevCode/GoApi/cmd/api/models"
@@ -14,16 +16,13 @@ import (
 	"time"
 )
 
-const maxParallelism = 10 //this is set to 5 as that is the max amount of calls we get with the free version
-
-var tickerDetailCache = &sync.Map{}
-var tickerOpenCloseCache = &sync.Map{}
+var cache = &sync.Map{}
 
 // GetTickerDetails gets stock information by ticker
 func GetTickerDetails(c *gin.Context, pa *intergration.PolygonApi) {
 
 	ctx := c.Request.Context()
-	var request TickerDetailsRequest
+	var request TickerDetailsDto
 
 	if err := c.ShouldBindQuery(&request); err != nil {
 		//handle bad request
@@ -37,7 +36,7 @@ func GetTickerDetails(c *gin.Context, pa *intergration.PolygonApi) {
 	key := fmt.Sprintf("ticker-details-%s", request.Ticker)
 
 	if cacheResult, ok :=
-		tickerDetailCache.Load(key); ok {
+		cache.Load(key); ok {
 		//data has been cached already
 		c.JSON(http.StatusOK, cacheResult)
 		return
@@ -58,14 +57,14 @@ func GetTickerDetails(c *gin.Context, pa *intergration.PolygonApi) {
 			return
 		}
 
-		//tickerDetailCache timeout
+		//cache timeout
 		go func() {
 			time.Sleep(4 * time.Minute)
-			tickerDetailCache.Delete(key)
+			cache.Delete(key)
 		}()
 
-		//store result in tickerDetailCache
-		tickerDetailCache.Store(key, result.Data)
+		//store result in cache
+		cache.Store(key, result.Data)
 
 		c.JSON(http.StatusOK, gin.H{"data": result.Data})
 
@@ -76,10 +75,112 @@ func GetTickerDetails(c *gin.Context, pa *intergration.PolygonApi) {
 
 }
 
+func GetSimpleMovingAverageForFavourites(c *gin.Context, stockDb StockRepository, pa *intergration.PolygonApi) {
+}
+
+func GetSimpleMovingAverage(c *gin.Context, pa *intergration.PolygonApi) {
+	ctx := c.Request.Context()
+	var params SimpleMovingAverageDto
+
+	if err := c.ShouldBindQuery(&params); err != nil {
+		log.Error(err)
+		c.JSON(http.StatusBadRequest, gin.H{"validation error": err})
+	}
+
+	var wg sync.WaitGroup
+	movingAvgCh := make(chan *Response[*polyModels.GetSMAResponse], 1)
+	lwTickerCh := make(chan *Response[*polyModels.GetDailyOpenCloseAggResponse], 1)
+
+	go func() {
+		defer wg.Done()
+		movingAverage := pa.FetchSimpleMovingAverage(params, ctx)
+
+		movingAvgCh <- &movingAverage
+	}()
+	go func() {
+		defer wg.Done()
+		//go get the price of the tickers close last week
+		weekAgo := params.TimeStamp.AddDate(0, 0, -7)
+		lwTickerPrice := pa.FetchTickerOpenClose(params.Ticker, weekAgo, ctx)
+
+		lwTickerCh <- &lwTickerPrice
+	}()
+
+	//wait for both to complete
+	wg.Wait()
+
+	//check if either channel errored
+	movingAverage := <-movingAvgCh
+	if movingAverage.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": movingAverage.Error.Error()})
+		return
+	}
+
+	lwTickerPrice := <-lwTickerCh
+	if lwTickerPrice.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": lwTickerPrice.Error.Error()})
+		return
+	}
+
+	//api returns a list no matter the count, we're requesting one moving average across the week so
+	//we grab the first and only value from the slice
+	if params.Window <= 5 {
+		avg := movingAverage.Data.Results.Values[0]
+		//calculate the change between last week's close and this week's average price
+		percentageDiff, err := processing.ComputePriceDelta(lwTickerPrice.Data.Close, avg.Value)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		result := &MovingAverageDto{
+			SimpleMovingAverage:      *movingAverage.Data,
+			PercentageChangeThisWeek: percentageDiff,
+			InvestIndicator:          "Bullish",
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": result})
+	}
+}
+
+// GetPreviousDayClose gets the previous day close for a ticker
+func GetPreviousDayClose(c *gin.Context, pa *intergration.PolygonApi) {
+	ctx := c.Request.Context()
+	var params PreviousCloseRequestDto
+
+	if err := c.ShouldBindQuery(&params); err != nil {
+		log.Error(err)
+		c.JSON(http.StatusBadRequest, gin.H{"validation error": err})
+	}
+
+	respCh := make(chan *Response[*polyModels.GetPreviousCloseAggResponse], 1)
+
+	go func() {
+		previousClose := pa.FetchPreviousClose(params, ctx)
+
+		respCh <- &previousClose
+	}()
+
+	select {
+	case result := <-respCh:
+		if result.Error != nil {
+			log.Error(result.Error)
+			c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"data": result.Data})
+		return
+
+	case <-ctx.Done():
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request cancelled or timed out!"})
+		return
+	}
+}
+
 // GetFavouriteStocksOpenClose gets favourite stocks open and close prices concurrently
 func GetFavouriteStocksOpenClose(c *gin.Context, stockDb StockRepository, pa *intergration.PolygonApi) {
 	ctx := c.Request.Context()
-	var params GetFavouriteStocksOpenCloseRequest
+	var params GetFavouriteStocksOpenCloseDto
 
 	if err := c.ShouldBindQuery(&params); err != nil {
 		log.Error(err)
@@ -90,7 +191,7 @@ func GetFavouriteStocksOpenClose(c *gin.Context, stockDb StockRepository, pa *in
 	//check if result has been cached
 	key := fmt.Sprintf("get-fav-open-close-%s", params.UserId)
 
-	if cacheResult, ok := tickerOpenCloseCache.Load(key); ok {
+	if cacheResult, ok := cache.Load(key); ok {
 		c.JSON(http.StatusOK, cacheResult)
 		return
 	}
@@ -143,10 +244,10 @@ func GetFavouriteStocksOpenClose(c *gin.Context, stockDb StockRepository, pa *in
 		//set timer for cache
 		go func() {
 			time.Sleep(3 * time.Minute)
-			tickerOpenCloseCache.Delete(key)
+			cache.Delete(key)
 		}()
 		//cache result
-		tickerOpenCloseCache.Store(key, response)
+		cache.Store(key, response)
 		c.JSON(http.StatusOK, gin.H{"data": response})
 
 	case <-ctx.Done():
